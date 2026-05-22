@@ -255,8 +255,8 @@ function bindEvents() {
     }
   });
 
-  window.speechSynthesis?.addEventListener?.("voiceschanged", populateVoices);
-  window.addEventListener("beforeunload", () => window.speechSynthesis?.cancel());
+  getSpeechSynthesis()?.addEventListener?.("voiceschanged", populateVoices);
+  window.addEventListener("beforeunload", () => getSpeechSynthesis()?.cancel());
 }
 
 function restoreState() {
@@ -316,6 +316,9 @@ function renderAll() {
 }
 
 function renderRecognitionStatus() {
+  if (!getSpeechSynthesis()) {
+    logDebug("当前浏览器不支持 speechSynthesis，朗读功能会受限，但 OCR 可继续使用。");
+  }
   if (state.ocrEngine === "tesseract" && "Tesseract" in window) {
     els.recognitionStatus.textContent = "Tesseract";
     els.recognitionStatus.className = "status-chip ready";
@@ -552,12 +555,60 @@ async function detectTextWithTesseract(file, languageMode = "auto") {
     }
   };
 
-  const imageSource = state.ocrEnhanceMode === "strong" ? await enhanceImageForOcr(file) : file;
-  const result = await runTesseract(imageSource, ocrLanguage, logger);
+  const result = state.ocrEnhanceMode === "strong"
+    ? await recognizeWithOriginalAndEnhanced(file, ocrLanguage, logger)
+    : await runTesseract(file, ocrLanguage, logger);
 
   const text = result?.data?.text || "";
   if (!text.trim()) throw new Error("Tesseract 没有识别到文字。");
   return text;
+}
+
+async function recognizeWithOriginalAndEnhanced(file, ocrLanguage, logger) {
+  setMessage("正在用原图识别...");
+  const originalResult = await runTesseract(file, ocrLanguage, logger);
+  const originalText = originalResult?.data?.text || "";
+  logDebug(`原图 OCR 字符数：${originalText.length}`);
+
+  try {
+    const enhancedImage = await enhanceImageForOcr(file);
+    setMessage("正在用增强图识别...");
+    const enhancedResult = await runTesseract(enhancedImage, ocrLanguage, logger);
+    const enhancedText = enhancedResult?.data?.text || "";
+    logDebug(`增强图 OCR 字符数：${enhancedText.length}`);
+
+    if (enhancedText.length > originalText.length * 1.15) {
+      return enhancedResult;
+    }
+    if (originalText.length > enhancedText.length * 1.15) {
+      return originalResult;
+    }
+
+    return {
+      data: {
+        text: mergeOcrText(originalText, enhancedText),
+      },
+    };
+  } catch (error) {
+    logDebug(`增强识别失败，保留原图结果：${error.message || error}`);
+    return originalResult;
+  }
+}
+
+function mergeOcrText(first, second) {
+  const seen = new Set();
+  return [first, second]
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      const key = line.replace(/\s+/g, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join("\n");
 }
 
 async function runTesseract(imageSource, ocrLanguage, logger) {
@@ -990,7 +1041,12 @@ function togglePlayback() {
 }
 
 function playFromMs(ms) {
-  window.speechSynthesis.cancel();
+  const speech = getSpeechSynthesis();
+  if (!speech) {
+    setMessage("当前浏览器不支持系统朗读，可以复制语音稿后换浏览器播放。", "error");
+    return;
+  }
+  speech.cancel();
   clearPlaybackTimer();
 
   const index = findQueueIndexByMs(ms);
@@ -1002,6 +1058,12 @@ function playFromMs(ms) {
 }
 
 function playCurrentSegment() {
+  const speech = getSpeechSynthesis();
+  if (!speech) {
+    stopPlayback(false);
+    setMessage("当前浏览器不支持系统朗读，可以复制语音稿后换浏览器播放。", "error");
+    return;
+  }
   const item = state.queue[state.playback.currentIndex];
   if (!item) {
     stopPlayback(false);
@@ -1028,20 +1090,20 @@ function playCurrentSegment() {
     playCurrentSegment();
   };
 
-  window.speechSynthesis.speak(utterance);
+  speech.speak(utterance);
   startPlaybackTimer();
   renderPlaybackState();
 }
 
 function pausePlayback() {
-  window.speechSynthesis.pause();
+  getSpeechSynthesis()?.pause();
   state.playback.isPaused = true;
   clearPlaybackTimer();
   renderPlaybackState();
 }
 
 function resumePlayback() {
-  window.speechSynthesis.resume();
+  getSpeechSynthesis()?.resume();
   state.playback.isPaused = false;
   state.playback.segmentStartedAt = performance.now() - (state.playback.currentMs - state.playback.segmentStartMs);
   startPlaybackTimer();
@@ -1049,7 +1111,7 @@ function resumePlayback() {
 }
 
 function stopPlayback(resetPosition = true) {
-  window.speechSynthesis.cancel();
+  getSpeechSynthesis()?.cancel();
   clearPlaybackTimer();
   state.playback.isPlaying = false;
   state.playback.isPaused = false;
@@ -1148,7 +1210,7 @@ function loadDemoWords() {
 }
 
 function populateVoices() {
-  const voices = window.speechSynthesis?.getVoices?.() || [];
+  const voices = getSpeechSynthesis()?.getVoices?.() || [];
   populateVoiceSelect(els.englishVoiceSelect, voices, "en", state.config.englishVoiceURI);
   populateVoiceSelect(els.chineseVoiceSelect, voices, "zh", state.config.chineseVoiceURI);
   populateVoiceSelect(els.japaneseVoiceSelect, voices, "ja", state.config.japaneseVoiceURI);
@@ -1165,7 +1227,7 @@ function populateVoiceSelect(select, voices, langPrefix, selectedURI) {
 }
 
 function getSelectedVoice(lang) {
-  const voices = window.speechSynthesis?.getVoices?.() || [];
+  const voices = getSpeechSynthesis()?.getVoices?.() || [];
   if (lang.startsWith("ja")) {
     const japaneseUri = state.config.japaneseVoiceURI;
     if (japaneseUri) return voices.find((voice) => voice.voiceURI === japaneseUri) || null;
@@ -1179,6 +1241,10 @@ function getSelectedVoice(lang) {
 function setMessage(text, type = "info") {
   els.extractMessage.textContent = text;
   els.recognitionStatus.classList.toggle("error", type === "error");
+}
+
+function getSpeechSynthesis() {
+  return window.speechSynthesis || null;
 }
 
 function fileToDataUrl(file) {
