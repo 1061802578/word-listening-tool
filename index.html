@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>单词磨耳朵工具</title>
+    <meta name="theme-color" content="#0f766e" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="player-bar" aria-label="朗读播放器">
+        <div class="player-row">
+          <button id="playPauseBtn" class="icon-button primary" type="button" aria-label="播放">
+            <span id="playPauseIcon">▶</span>
+          </button>
+          <button id="stopBtn" class="icon-button" type="button" aria-label="停止">■</button>
+          <div class="timeline-wrap">
+            <input id="timeline" class="timeline" type="range" min="0" max="0" value="0" step="100" />
+            <div class="time-meta">
+              <span id="currentTime">00:00</span>
+              <span id="activeSegment">等待生成朗读队列</span>
+              <span id="totalTime">00:00</span>
+            </div>
+          </div>
+          <label class="speed-control">
+            <span>倍速</span>
+            <select id="speedSelect">
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <header class="app-header">
+        <div>
+          <h1>图片单词提取与磨耳朵语音稿工具</h1>
+          <p>上传英语或日语词表图片，提取词条，筛选集合，再按“三遍词条一遍中文”的节奏朗读。</p>
+        </div>
+        <div class="header-actions">
+          <button id="loadDemoBtn" class="button secondary" type="button">载入示例</button>
+          <button id="copyScriptBtn" class="button" type="button">复制语音稿</button>
+        </div>
+      </header>
+
+      <section class="workspace-grid">
+        <aside class="left-panel">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>1. 图片识别</h2>
+              <span id="recognitionStatus" class="status-chip">本地OCR</span>
+            </div>
+
+            <label id="dropZone" class="drop-zone" for="imageInput">
+              <input id="imageInput" type="file" accept="image/*" />
+              <span class="drop-title">选择或拖入图片</span>
+              <span class="drop-subtitle">优先自带识别，不支持时自动用 Tesseract</span>
+            </label>
+
+            <img id="imagePreview" class="image-preview" alt="上传图片预览" hidden />
+
+            <button id="extractBtn" class="button full primary-action" type="button">识别图片文字</button>
+            <p id="extractMessage" class="helper-text"></p>
+
+            <label class="field">
+              <span>也可以粘贴已识别文字</span>
+              <textarea id="rawTextInput" placeholder="例如：&#10;achieve /əˈtʃiːv/ 实现，达到&#10;食べる（たべる）吃"></textarea>
+            </label>
+            <div class="stacked-actions">
+              <button id="importTextBtn" class="button full inline-full" type="button">普通导入</button>
+              <button id="deepseekOrganizeBtn" class="button full inline-full" type="button">DeepSeek 整理导入</button>
+            </div>
+
+            <div class="deepseek-box">
+              <label class="field">
+                <span>语言模式</span>
+                <select id="languageModeSelect">
+                  <option value="auto">自动识别</option>
+                  <option value="en">英语</option>
+                  <option value="ja">日语</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>图片增强</span>
+                <select id="ocrEnhanceSelect">
+                  <option value="strong">强力增强</option>
+                  <option value="normal">原图识别</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>DeepSeek 模型</span>
+                <select id="deepseekModelSelect">
+                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>接口地址</span>
+                <input id="deepseekEndpointInput" type="url" value="https://api.deepseek.com/chat/completions" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>2. 朗读设置</h2>
+            </div>
+
+            <div class="settings-grid">
+              <label class="field compact">
+                <span>英文遍数</span>
+                <input id="englishRepeatInput" type="number" min="1" max="10" value="3" />
+              </label>
+              <label class="field compact">
+                <span>中文遍数</span>
+                <input id="chineseRepeatInput" type="number" min="0" max="5" value="1" />
+              </label>
+              <label class="field compact">
+                <span>停顿(ms)</span>
+                <input id="pauseInput" type="number" min="0" max="5000" step="100" value="450" />
+              </label>
+              <label class="toggle-row">
+                <input id="includePhoneticInput" type="checkbox" />
+                <span>朗读读音</span>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>英文语音</span>
+              <select id="englishVoiceSelect"></select>
+            </label>
+            <label class="field">
+              <span>中文语音</span>
+              <select id="chineseVoiceSelect"></select>
+            </label>
+            <label class="field">
+              <span>日语语音</span>
+              <select id="japaneseVoiceSelect"></select>
+            </label>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>3. 词条集合</h2>
+            </div>
+            <div class="save-row">
+              <input id="setNameInput" type="text" placeholder="集合名称，例如 Unit 1" />
+              <button id="saveSetBtn" class="button" type="button">保存</button>
+            </div>
+            <div id="setsList" class="sets-list"></div>
+          </section>
+        </aside>
+
+        <section class="main-panel">
+          <section class="panel word-panel">
+            <div class="panel-heading word-heading">
+              <div>
+                <h2>词条列表</h2>
+                <p id="wordCountText">暂无词条</p>
+              </div>
+              <div class="toolbar">
+                <label class="filter-control">
+                  <span>首字母</span>
+                  <input id="prefixFilterInput" type="text" maxlength="12" placeholder="如 a / pre" />
+                </label>
+                <button id="selectAllBtn" class="button small" type="button">全选</button>
+                <button id="invertSelectBtn" class="button small" type="button">反选</button>
+                <button id="deleteSelectedBtn" class="button small danger" type="button">删除</button>
+                <button id="addWordBtn" class="button small" type="button">新增</button>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="word-table">
+                <thead>
+                  <tr>
+                    <th class="check-col">选</th>
+                    <th>词条</th>
+                    <th>读音</th>
+                    <th>中文释义</th>
+                    <th class="confidence-col">来源</th>
+                  </tr>
+                </thead>
+                <tbody id="wordTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel script-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>语音稿预览</h2>
+                <p id="queueSummary">选择词条后自动生成</p>
+              </div>
+              <button id="rebuildQueueBtn" class="button small" type="button">刷新队列</button>
+            </div>
+            <div id="scriptPreview" class="script-preview"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <template id="wordRowTemplate">
+      <tr>
+        <td class="check-col" data-label="选择"><input class="word-selected" type="checkbox" /></td>
+        <td data-label="词条"><input class="word-input table-input strong" type="text" /></td>
+        <td data-label="读音"><input class="phonetic-input table-input" type="text" placeholder="/.../ 或 かな" /></td>
+        <td data-label="中文释义"><input class="meaning-input table-input" type="text" /></td>
+        <td class="confidence-col" data-label="来源"><span class="source-pill"></span></td>
+      </tr>
+    </template>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/6.0.1/tesseract.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

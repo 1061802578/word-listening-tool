@@ -1,0 +1,14 @@
+{
+  "name": "word-listening-tool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A mobile-friendly OCR vocabulary listening tool for English and Japanese word lists.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
