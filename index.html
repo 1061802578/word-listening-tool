@@ -65,6 +65,7 @@
 
             <button id="extractBtn" class="button full primary-action" type="button">识别图片文字</button>
             <p id="extractMessage" class="helper-text"></p>
+            <pre id="debugLog" class="debug-log" hidden></pre>
 
             <label class="field">
               <span>也可以粘贴已识别文字</span>
@@ -82,6 +83,14 @@
                   <option value="auto">自动识别</option>
                   <option value="en">英语</option>
                   <option value="ja">日语</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>识别引擎</span>
+                <select id="ocrEngineSelect">
+                  <option value="tesseract">Tesseract 完整识别</option>
+                  <option value="browser">浏览器自带快速识别</option>
+                  <option value="auto">自动选择</option>
                 </select>
               </label>
               <label class="field">
@@ -214,7 +223,7 @@
       </tr>
     </template>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/6.0.1/tesseract.min.js"></script>
-    <script src="./app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/6.0.1/tesseract.min.js" onerror="window.__tesseractLoadError=true"></script>
+    <script src="./app.js?v=20260522-mobile-diagnostics"></script>
   </body>
 </html>

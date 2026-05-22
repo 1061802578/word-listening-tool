@@ -1,6 +1,7 @@
 const STORAGE_KEY = "word-listening-tool-state-v1";
 const DEFAULT_DEEPSEEK_API_KEY = "";
 const DEFAULT_DEEPSEEK_ENDPOINT = "/api/deepseek";
+const debugMessages = [];
 
 const state = {
   words: [],
@@ -11,6 +12,7 @@ const state = {
   deepseekModel: "deepseek-v4-flash",
   deepseekEndpoint: DEFAULT_DEEPSEEK_ENDPOINT,
   languageMode: "auto",
+  ocrEngine: "tesseract",
   ocrEnhanceMode: "strong",
   filterPrefix: "",
   config: {
@@ -62,10 +64,12 @@ function bindElements() {
     "imagePreview",
     "extractBtn",
     "extractMessage",
+    "debugLog",
     "rawTextInput",
     "importTextBtn",
     "deepseekOrganizeBtn",
     "languageModeSelect",
+    "ocrEngineSelect",
     "ocrEnhanceSelect",
     "deepseekModelSelect",
     "deepseekEndpointInput",
@@ -98,6 +102,8 @@ function bindElements() {
 }
 
 function bindEvents() {
+  bindGlobalDiagnostics();
+
   els.imageInput.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) setImageFile(file);
@@ -135,6 +141,12 @@ function bindEvents() {
     state.languageMode = els.languageModeSelect.value;
     persistState();
     rebuildQueue();
+  });
+
+  els.ocrEngineSelect.addEventListener("change", () => {
+    state.ocrEngine = els.ocrEngineSelect.value;
+    persistState();
+    renderRecognitionStatus();
   });
 
   els.ocrEnhanceSelect.addEventListener("change", () => {
@@ -256,6 +268,7 @@ function restoreState() {
     state.deepseekModel = saved.deepseekModel || "deepseek-v4-flash";
     state.deepseekEndpoint = saved.deepseekEndpoint || DEFAULT_DEEPSEEK_ENDPOINT;
     state.languageMode = saved.languageMode || "auto";
+    state.ocrEngine = saved.ocrEngine || "tesseract";
     state.ocrEnhanceMode = saved.ocrEnhanceMode || "strong";
     state.filterPrefix = saved.filterPrefix || "";
     state.config = { ...state.config, ...(saved.config || {}) };
@@ -269,6 +282,7 @@ function restoreState() {
   els.deepseekModelSelect.value = state.deepseekModel;
   els.deepseekEndpointInput.value = state.deepseekEndpoint;
   els.languageModeSelect.value = state.languageMode;
+  els.ocrEngineSelect.value = state.ocrEngine;
   els.ocrEnhanceSelect.value = state.ocrEnhanceMode;
   els.prefixFilterInput.value = state.filterPrefix;
   els.englishRepeatInput.value = state.config.englishRepeatCount;
@@ -286,6 +300,7 @@ function persistState() {
     deepseekModel: state.deepseekModel,
     deepseekEndpoint: state.deepseekEndpoint,
     languageMode: state.languageMode,
+    ocrEngine: state.ocrEngine,
     ocrEnhanceMode: state.ocrEnhanceMode,
     filterPrefix: state.filterPrefix,
     config: state.config,
@@ -301,11 +316,17 @@ function renderAll() {
 }
 
 function renderRecognitionStatus() {
-  if ("TextDetector" in window) {
+  if (state.ocrEngine === "tesseract" && "Tesseract" in window) {
+    els.recognitionStatus.textContent = "Tesseract";
+    els.recognitionStatus.className = "status-chip ready";
+  } else if (state.ocrEngine === "browser" && "TextDetector" in window) {
     els.recognitionStatus.textContent = "自带可用";
     els.recognitionStatus.className = "status-chip ready";
   } else if ("Tesseract" in window) {
     els.recognitionStatus.textContent = "Tesseract";
+    els.recognitionStatus.className = "status-chip ready";
+  } else if ("TextDetector" in window) {
+    els.recognitionStatus.textContent = "自带可用";
     els.recognitionStatus.className = "status-chip ready";
   } else {
     els.recognitionStatus.textContent = "需粘贴";
@@ -428,6 +449,7 @@ function updateAfterWordChange() {
 
 async function setImageFile(file) {
   state.imageFile = file;
+  logDebug(`已选择图片：${file.name || "未命名"}，${Math.round(file.size / 1024)}KB，${file.type || "未知类型"}`);
   state.imageDataUrl = await fileToDataUrl(file);
   els.imagePreview.src = state.imageDataUrl;
   els.imagePreview.hidden = false;
@@ -435,13 +457,18 @@ async function setImageFile(file) {
 }
 
 async function extractWordsFromImage() {
+  logDebug("点击识别按钮");
   if (!state.imageFile) {
     setMessage("请先选择一张图片。", "error");
     return;
   }
 
-  if (!("TextDetector" in window) && !("Tesseract" in window)) {
-    setMessage("当前浏览器没有加载到可用 OCR。可以刷新页面，或先用系统 OCR 识别后粘贴到下方文本框导入。", "error");
+  if (window.__tesseractLoadError) {
+    logDebug("Tesseract CDN 加载失败");
+  }
+
+  if (!getAvailableOcrEngines().length) {
+    setMessage("当前浏览器没有加载到可用 OCR。请刷新页面；若仍失败，可能是手机网络无法加载 Tesseract CDN。", "error");
     renderRecognitionStatus();
     return;
   }
@@ -463,27 +490,47 @@ async function extractWordsFromImage() {
 }
 
 async function detectTextFromImage(file) {
-  if ("TextDetector" in window) {
-    try {
-      setMessage("正在用浏览器自带识别...");
-      return await detectTextWithBrowser(file);
-    } catch (error) {
-      console.warn("TextDetector failed, falling back to Tesseract.", error);
+  logDebug(`识别引擎：${state.ocrEngine}`);
+
+  if (state.ocrEngine === "browser") {
+    if (!("TextDetector" in window)) {
+      throw new Error("当前浏览器没有开放自带文字识别。请切换到 Tesseract 完整识别。");
     }
+    setMessage("正在用浏览器自带识别...");
+    return detectTextWithBrowser(file);
+  }
+
+  if (state.ocrEngine === "tesseract") {
+    if (!("Tesseract" in window)) {
+      throw new Error("Tesseract 没有加载成功。请刷新页面，或检查手机网络是否能访问 cdnjs。");
+    }
+    return detectTextWithTesseract(file, state.languageMode);
   }
 
   if ("Tesseract" in window) {
     return detectTextWithTesseract(file, state.languageMode);
   }
 
+  if ("TextDetector" in window) {
+    setMessage("Tesseract 不可用，正在用浏览器自带识别...");
+    return detectTextWithBrowser(file);
+  }
+
   throw new Error("没有可用的本地 OCR。");
+}
+
+function getAvailableOcrEngines() {
+  const engines = [];
+  if ("Tesseract" in window) engines.push("tesseract");
+  if ("TextDetector" in window) engines.push("browser");
+  return engines;
 }
 
 async function detectTextWithBrowser(file) {
   const Detector = window.TextDetector;
   const detector = new Detector();
-  const bitmap = await createImageBitmap(file);
-  const results = await detector.detect(bitmap);
+  const bitmap = await decodeImageBitmap(file);
+  const results = await detector.detect(bitmap.image || bitmap);
   bitmap.close?.();
   const text = results
     .map((item) => item.rawValue || item.detectedText || item.text || "")
@@ -540,7 +587,7 @@ async function runTesseract(imageSource, ocrLanguage, logger) {
 
 async function enhanceImageForOcr(file) {
   setMessage("正在增强图片：放大、提对比、二值化...");
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await decodeImageBitmap(file);
   const maxSide = 2800;
   const baseScale = Math.max(2, Math.min(3, 1800 / Math.max(bitmap.width, bitmap.height)));
   const scale = Math.min(baseScale, maxSide / Math.max(bitmap.width, bitmap.height));
@@ -553,7 +600,7 @@ async function enhanceImageForOcr(file) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bitmap, 0, 0, width, height);
+  ctx.drawImage(bitmap.image || bitmap, 0, 0, width, height);
   bitmap.close?.();
 
   const imageData = ctx.getImageData(0, 0, width, height);
@@ -577,6 +624,35 @@ async function enhanceImageForOcr(file) {
   }
   ctx.putImageData(imageData, 0, 0);
   return canvas.toDataURL("image/png");
+}
+
+async function decodeImageBitmap(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch (error) {
+      logDebug(`createImageBitmap 失败：${error.message || error}`);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        close: () => {},
+        image,
+      });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("手机浏览器无法解码这张图片。请换成截图、JPG 或 PNG 后再试。"));
+    };
+    image.src = url;
+  });
 }
 
 function importWordsFromRawText() {
@@ -1119,7 +1195,7 @@ function normalizeWord(value) {
     .trim()
     .toLowerCase()
     .replace(/[()[\]{}（）【】「」『』/\\]/g, "")
-    .replace(/[^\p{L}\p{Script=Hiragana}\p{Script=Katakana}々ー'-]/gu, "");
+    .replace(/[^A-Za-z\u3040-\u30ff\u3400-\u9fff々ー'-]/g, "");
 }
 
 function isLikelyNoise(value) {
@@ -1202,6 +1278,31 @@ function formatSource(source) {
     manual: "手动",
   };
   return labels[source] || source || "手动";
+}
+
+function bindGlobalDiagnostics() {
+  window.addEventListener("error", (event) => {
+    const message = event.message || event.error?.message || "未知脚本错误";
+    logDebug(`脚本错误：${message}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason?.message || event.reason || "未知异步错误";
+    logDebug(`异步错误：${reason}`);
+  });
+  if (window.__tesseractLoadError) {
+    logDebug("Tesseract 脚本加载失败。手机网络可能无法访问 cdnjs。");
+  }
+}
+
+function logDebug(message) {
+  if (!message) return;
+  const text = `[${new Date().toLocaleTimeString()}] ${message}`;
+  debugMessages.push(text);
+  if (debugMessages.length > 8) debugMessages.shift();
+  if (els.debugLog) {
+    els.debugLog.hidden = false;
+    els.debugLog.textContent = debugMessages.join("\n");
+  }
 }
 
 function clampInt(value, min, max, fallback) {

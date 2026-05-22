@@ -299,6 +299,20 @@ button {
   padding: 0 18px 14px;
 }
 
+.debug-log {
+  max-height: 160px;
+  overflow: auto;
+  margin: 0 18px 14px;
+  padding: 10px;
+  border: 1px solid #f2b8b5;
+  border-radius: var(--radius);
+  background: #fff8f7;
+  color: var(--danger);
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .image-preview {
   display: block;
   width: calc(100% - 36px);
